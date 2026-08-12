@@ -68,6 +68,23 @@ Your worker will be available at:
 https://synology-ddns.YOUR_SUBDOMAIN.workers.dev
 ```
 
+### 5. Custom Domain (Optional)
+
+To use `synology-ddns.awesomemm.com` instead of `workers.dev`:
+
+1. Go to Cloudflare Dashboard → your zone → **Workers & Pages**
+2. Click your worker → **Settings** → **Triggers** → **Custom Domains**
+3. Add `synology-ddns.awesomemm.com`
+4. Cloudflare will auto-create the DNS record and SSL certificate
+
+Or manually create a CNAME record:
+```
+Type: CNAME
+Name: synology-ddns
+Target: synology-ddns.YOUR_SUBDOMAIN.workers.dev
+Proxy: DNS only (grey cloud)
+```
+
 ## Synology DSM Setup
 
 1. Open **Control Panel → External Access → DDNS**
@@ -83,6 +100,85 @@ https://synology-ddns.YOUR_SUBDOMAIN.workers.dev
 | Password | Your API token |
 
 4. Click **Test Connection** then **OK**
+
+## Exposing Synology Without Public IP (Cloudflare Tunnel)
+
+If your ISP uses CGNAT or you don't have a public IP, use **Cloudflare Tunnel** to securely expose your Synology NAS services.
+
+### How It Works
+
+```
+Internet ──▶ Cloudflare Edge ──▶ Tunnel ──▶ Synology NAS (local network)
+              (anycast)          (encrypted)   (5000, 5001, etc.)
+```
+
+No port forwarding needed. No public IP needed. Your NAS connects outbound to Cloudflare.
+
+### Step 1: Create Tunnel in Cloudflare Dashboard
+
+1. Go to **https://one.dash.cloudflare.com** → **Networks** → **Tunnels**
+2. Click **Create a tunnel**
+3. Choose **Cloudflared** connector
+4. Name it: `synology-nas`
+5. Copy the install command (it contains your tunnel token)
+
+### Step 2: Install cloudflared on Synology
+
+**Option A: Docker (Recommended)**
+
+In Synology DSM:
+1. Open **Container Manager** → **Image** → Pull `cloudflare/cloudflared:latest`
+2. Create container with:
+   - Command: `tunnel --no-autoupdate run`
+   - Environment: `TUNNEL_TOKEN=<your-token-from-dashboard>`
+   - Network: Host mode
+
+**Option B: SSH**
+
+```bash
+# SSH into your Synology
+sudo wget -O /usr/local/bin/cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
+sudo chmod +x /usr/local/bin/cloudflared
+
+# Run the tunnel (replace YOUR_TOKEN)
+sudo cloudflared service install YOUR_TOKEN
+```
+
+### Step 3: Configure Public Hostnames
+
+In the Cloudflare Dashboard → your tunnel → **Public Hostname** tab, add:
+
+| Service | Subdomain | Type | URL |
+|---------|-----------|------|-----|
+| DSM Web | `nas.awesomemm.com` | HTTP | `http://localhost:5000` |
+| DSM HTTPS | `nas.awesomemm.com` | HTTPS | `https://localhost:5001` |
+| File Station | `files.awesomemm.com` | HTTP | `http://localhost:5000` |
+
+### Step 4: Update DDNS Worker
+
+The DDNS worker can now point to your tunnel IP. When Synology updates its DDNS, the tunnel handles the routing:
+
+1. Synology thinks it has a public IP (Cloudflare gives it one via the tunnel)
+2. DDNS record updates to Cloudflare's IP
+3. Traffic flows through the tunnel to your NAS
+
+**Alternative: Skip DDNS entirely**
+
+If you only need remote access (not DDNS), Cloudflare Tunnel is enough. Just:
+- Create the tunnel
+- Set public hostnames
+- Access `nas.awesomemm.com` from anywhere
+
+No DDNS needed because the tunnel IP never changes.
+
+### Step 5: Secure with Cloudflare Access (Optional)
+
+Add authentication to your exposed services:
+1. Go to **Zero Trust** → **Access** → **Applications**
+2. Create an application for `nas.awesomemm.com`
+3. Add a policy (e.g., email-based OTP, or your Google/GitHub account)
+
+This protects your NAS even if someone guesses the URL.
 
 ## Management Dashboard
 
