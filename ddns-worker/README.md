@@ -52,6 +52,9 @@ echo "YOUR_API_TOKEN" | npx wrangler secret put CF_API_TOKEN
 
 # The full hostname to update (e.g., nas.example.com)
 echo "nas.example.com" | npx wrangler secret put RECORD_NAME
+
+# Password for the management dashboard
+echo "YOUR_ADMIN_PASSWORD" | npx wrangler secret put ADMIN_PASSWORD
 ```
 
 ### 4. Deploy
@@ -81,7 +84,28 @@ https://synology-ddns.YOUR_SUBDOMAIN.workers.dev
 
 4. Click **Test Connection** then **OK**
 
+## Management Dashboard
+
+A web-based management interface is included. Access it at:
+
+```
+https://synology-ddns.YOUR_SUBDOMAIN.workers.dev/admin
+```
+
+Login with:
+- **Username:** `admin`
+- **Password:** Your `ADMIN_PASSWORD` secret
+
+The dashboard lets you:
+- View all DNS A records in your zone
+- Add new DDNS records
+- Edit existing records (hostname + IP)
+- Delete records
+- See the Synology DDNS endpoint URL for quick setup
+
 ## API Endpoints
+
+### DDNS Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
@@ -89,6 +113,38 @@ https://synology-ddns.YOUR_SUBDOMAIN.workers.dev
 | `/nic/update?hostname=X&myip=Y` | GET | Synology-compatible update |
 | `/nic/checkip` | GET | Returns your public IP |
 | `/health` | GET | Health check (returns `ok`) |
+
+### Admin API
+
+All admin endpoints require Basic Auth with the `ADMIN_PASSWORD`.
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/admin` | GET | Management dashboard UI |
+| `/api/records` | GET | List all A records |
+| `/api/records` | POST | Create a new A record |
+| `/api/records/:id` | PUT | Update an A record |
+| `/api/records/:id` | DELETE | Delete an A record |
+
+**Create record:**
+```bash
+curl -u "admin:ADMIN_PASSWORD" -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"name":"nas.example.com","content":"1.2.3.4"}' \
+  https://synology-ddns.YOUR_SUBDOMAIN.workers.dev/api/records
+```
+
+**List records:**
+```bash
+curl -u "admin:ADMIN_PASSWORD" \
+  https://synology-ddns.YOUR_SUBDOMAIN.workers.dev/api/records
+```
+
+**Delete record:**
+```bash
+curl -u "admin:ADMIN_PASSWORD" -X DELETE \
+  https://synology-ddns.YOUR_SUBDOMAIN.workers.dev/api/records/RECORD_ID
+```
 
 ## Authentication
 
@@ -125,6 +181,7 @@ npx wrangler dev
 |--------|-------------|
 | `CF_API_TOKEN` | Cloudflare API token with DNS permissions |
 | `RECORD_NAME` | Full hostname to update (e.g., `nas.example.com`) |
+| `ADMIN_PASSWORD` | Password for the management dashboard |
 
 ## Environment Variables (Vars)
 
