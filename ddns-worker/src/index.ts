@@ -121,71 +121,78 @@ function unauthorized(): Response {
 }
 
 async function cfFetch(path: string, env: Env, method = "GET", body?: object): Promise<Response> {
-  return fetch(`https://api.cloudflare.com/client/v4${path}`, {
+  const resp = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
     method,
     headers: { Authorization: `Bearer ${env.CF_API_TOKEN}`, "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
   });
+  return resp;
+}
+
+async function safeJson(resp: Promise<Response>): Promise<CloudflareResponse<unknown>> {
+  try {
+    const r = await resp;
+    const text = await r.text();
+    try { return JSON.parse(text); }
+    catch { return { success: false, errors: [{ code: 0, message: text || "Invalid response" }], result: null }; }
+  } catch (e) {
+    return { success: false, errors: [{ code: 0, message: e instanceof Error ? e.message : "Network error" }], result: null };
+  }
 }
 
 async function listRecords(env: Env): Promise<Response> {
-  const resp = await cfFetch(`/zones/${env.ZONE_ID}/dns_records?type=A`, env);
-  return jsonResponse(await resp.json());
+  const data = await safeJson(cfFetch(`/zones/${env.ZONE_ID}/dns_records?type=A`, env));
+  return jsonResponse(data);
 }
 
 async function createRecord(request: Request, env: Env): Promise<Response> {
   const { name, content } = await request.json<{ name: string; content: string }>();
-  const resp = await cfFetch(`/zones/${env.ZONE_ID}/dns_records`, env, "POST", {
+  const data = await safeJson(cfFetch(`/zones/${env.ZONE_ID}/dns_records`, env, "POST", {
     type: "A", name, content, ttl: 1, proxied: false,
-  });
-  const data: CloudflareResponse<DNSRecord> = await resp.json();
+  }));
   return jsonResponse(data, data.success ? 201 : 400);
 }
 
 async function deleteRecord(id: string, env: Env): Promise<Response> {
-  const resp = await cfFetch(`/zones/${env.ZONE_ID}/dns_records/${id}`, env, "DELETE");
-  return jsonResponse(await resp.json());
+  const data = await safeJson(cfFetch(`/zones/${env.ZONE_ID}/dns_records/${id}`, env, "DELETE"));
+  return jsonResponse(data);
 }
 
 async function updateRecord(id: string, request: Request, env: Env): Promise<Response> {
   const { name, content } = await request.json<{ name: string; content: string }>();
-  const resp = await cfFetch(`/zones/${env.ZONE_ID}/dns_records/${id}`, env, "PUT", {
+  const data = await safeJson(cfFetch(`/zones/${env.ZONE_ID}/dns_records/${id}`, env, "PUT", {
     type: "A", name, content, ttl: 1, proxied: false,
-  });
-  return jsonResponse(await resp.json());
+  }));
+  return jsonResponse(data);
 }
 
 async function listTunnels(env: Env): Promise<Response> {
-  const resp = await cfFetch(`/accounts/${env.ACCOUNT_ID}/cfd_tunnel`, env);
-  return jsonResponse(await resp.json());
+  const data = await safeJson(cfFetch(`/accounts/${env.ACCOUNT_ID}/cfd_tunnel`, env));
+  return jsonResponse(data);
 }
 
 async function getTunnel(id: string, env: Env): Promise<Response> {
-  const resp = await cfFetch(`/accounts/${env.ACCOUNT_ID}/cfd_tunnel/${id}`, env);
-  const data: CloudflareResponse<Tunnel> = await resp.json();
+  const data = await safeJson(cfFetch(`/accounts/${env.ACCOUNT_ID}/cfd_tunnel/${id}`, env));
   if (!data.success) return jsonResponse(data, 404);
 
-  const configResp = await cfFetch(`/accounts/${env.ACCOUNT_ID}/cfd_tunnel/${id}/configurations`, env);
-  const configData = await configResp.json();
-
-  return jsonResponse({ ...data, result: { ...data.result, config: configData.result } });
+  const configData = await safeJson(cfFetch(`/accounts/${env.ACCOUNT_ID}/cfd_tunnel/${id}/configurations`, env));
+  return jsonResponse({ ...data, result: { ...(data.result as object), config: configData.result } });
 }
 
 async function createTunnel(request: Request, env: Env): Promise<Response> {
   const { name } = await request.json<{ name: string }>();
-  const resp = await cfFetch(`/accounts/${env.ACCOUNT_ID}/cfd_tunnel`, env, "POST", { name });
-  const data: CloudflareResponse<Tunnel> = await resp.json();
+  const data = await safeJson(cfFetch(`/accounts/${env.ACCOUNT_ID}/cfd_tunnel`, env, "POST", { name }));
   return jsonResponse(data, data.success ? 201 : 400);
 }
 
 async function deleteTunnel(id: string, env: Env): Promise<Response> {
-  const resp = await cfFetch(`/accounts/${env.ACCOUNT_ID}/cfd_tunnel/${id}`, env, "DELETE");
-  return jsonResponse(await resp.json());
+  const data = await safeJson(cfFetch(`/accounts/${env.ACCOUNT_ID}/cfd_tunnel/${id}`, env, "DELETE"));
+  return jsonResponse(data);
 }
 
 async function addHostname(tunnelId: string, request: Request, env: Env): Promise<Response> {
   const { hostname, service } = await request.json<{ hostname: string; service: string }>();
-  const resp = await cfFetch(
+  const data = await safeJson(cfFetch(
     `/accounts/${env.ACCOUNT_ID}/cfd_tunnel/${tunnelId}/configurations`,
     env, "PUT", {
       config: {
@@ -195,13 +202,12 @@ async function addHostname(tunnelId: string, request: Request, env: Env): Promis
         ],
       },
     }
-  );
-  return jsonResponse(await resp.json());
+  ));
+  return jsonResponse(data);
 }
 
 async function deleteHostname(tunnelId: string, hostname: string, env: Env): Promise<Response> {
-  const configResp = await cfFetch(`/accounts/${env.ACCOUNT_ID}/cfd_tunnel/${tunnelId}/configurations`, env);
-  const configData = await configResp.json();
+  const configData = await safeJson(cfFetch(`/accounts/${env.ACCOUNT_ID}/cfd_tunnel/${tunnelId}/configurations`, env));
   if (!configData.success) return jsonResponse(configData, 404);
 
   const config = configData.result?.config || configData.result;
@@ -212,11 +218,11 @@ async function deleteHostname(tunnelId: string, hostname: string, env: Env): Pro
     newIngress.push({ service: "http_status:404" });
   }
 
-  const resp = await cfFetch(
+  const data = await safeJson(cfFetch(
     `/accounts/${env.ACCOUNT_ID}/cfd_tunnel/${tunnelId}/configurations`,
     env, "PUT", { config: { ingress: newIngress } }
-  );
-  return jsonResponse(await resp.json());
+  ));
+  return jsonResponse(data);
 }
 
 async function handleUpdate(request: Request, env: Env): Promise<Response> {
@@ -236,8 +242,7 @@ async function handleUpdate(request: Request, env: Env): Promise<Response> {
 
   try {
     const cfApiBase = `/zones/${env.ZONE_ID}/dns_records`;
-    const listResp = await cfFetch(`${cfApiBase}?type=A&name=${encodeURIComponent(hostname)}`, env);
-    const listData: CloudflareResponse<DNSRecord[]> = await listResp.json();
+    const listData = await safeJson(cfFetch(`${cfApiBase}?type=A&name=${encodeURIComponent(hostname)}`, env)) as CloudflareResponse<DNSRecord[]>;
 
     if (!listData.success) return plainText("badauth", 500);
 
@@ -245,18 +250,16 @@ async function handleUpdate(request: Request, env: Env): Promise<Response> {
 
     if (existing) {
       if (existing.content === myip) return plainText("good " + myip);
-      const updateResp = await cfFetch(`${cfApiBase}/${existing.id}`, env, "PUT", {
+      const updateData = await safeJson(cfFetch(`${cfApiBase}/${existing.id}`, env, "PUT", {
         type: "A", name: hostname, content: myip, ttl: 1, proxied: false,
-      });
-      const updateData: CloudflareResponse<DNSRecord> = await updateResp.json();
+      })) as CloudflareResponse<DNSRecord>;
       if (!updateData.success) return plainText("fail updating", 500);
       return plainText("good " + myip);
     }
 
-    const createResp = await cfFetch(cfApiBase, env, "POST", {
+    const createData = await safeJson(cfFetch(cfApiBase, env, "POST", {
       type: "A", name: hostname, content: myip, ttl: 1, proxied: false,
-    });
-    const createData: CloudflareResponse<DNSRecord> = await createResp.json();
+    })) as CloudflareResponse<DNSRecord>;
     if (!createData.success) return plainText("fail creating", 500);
     return plainText("good " + myip);
   } catch (err) {
