@@ -4,9 +4,6 @@
   "account_id": "f37f34af042ad0623973316ad12123fd",
   "main": "src/index.ts",
   "compatibility_date": "2025-01-01",
-  "routes": [
-    { "pattern": "synology-ddns.awesomemm.com/*", "zone_name": "awesomemm.com" }
-  ],
   "vars": {
     "ZONE_ID": "63af8acaffd04c190dbca415bc8cdb0f"
   }
