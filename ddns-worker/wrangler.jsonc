@@ -1,0 +1,10 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "synology-ddns",
+  "account_id": "f37f34af042ad0623973316ad12123fd",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-01-01",
+  "vars": {
+    "ZONE_ID": "63af8acaffd04c190dbca415bc8cdb0f"
+  }
+}
